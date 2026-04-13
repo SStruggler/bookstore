@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bookstore Manager</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        .chatbot-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 350px;
+            height: 500px;
+            background: white;
+            border: 2px solid #007acc;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 1000;
+        }
+        .chatbot-container.minimized {
+            height: auto;
+        }
+        .chatbot-container.minimized .chat-messages,
+        .chatbot-container.minimized .chat-input-area {
+            display: none;
+        }
+        .chatbot-header {
+            background: #007acc;
+            color: white;
+            padding: 16px;
+            border-radius: 6px 6px 0 0;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .chatbot-header button {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+        }
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        .chat-message {
+            margin-bottom: 12px;
+            display: flex;
+            flex-direction: column;
+        }
+        .user-message {
+            align-items: flex-end;
+        }
+        .user-message .msg-text {
+            background: #007acc;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            max-width: 80%;
+        }
+        .bot-message {
+            align-items: flex-start;
+        }
+        .bot-message .msg-text {
+            background: #f0f0f0;
+            color: black;
+            padding: 8px 12px;
+            border-radius: 8px;
+            max-width: 80%;
+        }
+        .chat-input-area {
+            display: flex;
+            padding: 12px;
+            gap: 8px;
+        }
+        .chat-input-area input {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .chat-input-area button {
+            padding: 8px 16px;
+            background: #007acc;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .chat-input-area button:hover {
+            background: #005a9e;
+        }
+        .loading {
+            color: #999;
+            font-size: 12px;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Book Records</h1>
+
+<div style="margin-bottom: 16px;">
+    <button id="show-all-btn" type="button" style="padding: 8px 12px; background:#007acc; color:white; border:none; border-radius:4px; cursor:pointer;">Show All</button>
+</div>
+
+<form action="{% if edit_student %}/students/edit/{{ edit_student.id }}{% else %}/students/form{% endif %}" method="post">
+    <input type="text" name="book_name" placeholder="Book Name" value="{% if edit_student %}{{ edit_student.book_name }}{% endif %}" required>
+    <input type="text" name="author" placeholder="Author" value="{% if edit_student %}{{ edit_student.author }}{% endif %}" required>
+    <input type="text" name="catagory" placeholder="Category" value="{% if edit_student %}{{ edit_student.catagory }}{% endif %}" required>
+    <input type="number" step="0.01" name="price" placeholder="Price" value="{% if edit_student %}{{ edit_student.price }}{% endif %}" required>
+    <input type="number" name="stock" placeholder="Stock" value="{% if edit_student %}{{ edit_student.stock }}{% endif %}" required>
+    <button type="submit">{% if edit_student %}Update Book{% else %}Add Book{% endif %}</button>
+    {% if edit_student %}
+    <a href="/" style="margin-left:12px;">Cancel</a>
+    {% endif %}
+</form>
+
+<table id="students-table" style="display:none; width:100%; border-collapse:collapse; margin-top:16px;">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Book Name</th>
+            <th>Author</th>
+            <th>Category</th>
+            <th>Price</th>
+            <th>Stock</th>
+            <th>Action</th>
+        </tr>
+    </thead>
+    <tbody id="students-body">
+        {% for s in students %}
+        <tr>
+            <td>{{ s.id }}</td>
+            <td>{{ s.book_name }}</td>
+            <td>{{ s.author }}</td>
+            <td>{{ s.catagory }}</td>
+            <td>{{ s.price }}</td>
+            <td>{{ s.stock }}</td>
+            <td>
+                <a href="/edit/{{ s.id }}">Edit</a> |
+                <a href="/delete/{{ s.id }}">Delete</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<!-- Chatbot Widget -->
+<div class="chatbot-container" id="chatbot-container">
+    <div class="chatbot-header">
+        <span>Bookstore Assistant</span>
+        <button id="toggle-btn">-</button>
+    </div>
+    <div class="chat-messages" id="chat-messages"></div>
+    <div class="chat-input-area">
+        <input type="text" id="chat-input" placeholder="Ask me about books..." />
+        <button id="send-btn">Send</button>
+    </div>
+</div>
+
+<script>
+    const showAllBtn = document.getElementById('show-all-btn');
+    const studentsTable = document.getElementById('students-table');
+    const studentsBody = document.getElementById('students-body');
+
+    function renderRows(students) {
+        studentsBody.innerHTML = '';
+        students.forEach(s => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${s.id}</td>
+                <td>${s.book_name}</td>
+                <td>${s.author}</td>
+                <td>${s.catagory}</td>
+                <td>${s.price}</td>
+                <td>${s.stock}</td>
+                <td>
+                    <a href="/edit/${s.id}">Edit</a> |
+                    <a href="/delete/${s.id}">Delete</a>
+                </td>
+            `;
+            studentsBody.appendChild(row);
+        });
+    }
+
+    showAllBtn.addEventListener('click', async () => {
+        try {
+            const response = await fetch('/students');
+            if (!response.ok) {
+                throw new Error('Could not load students');
+            }
+            const students = await response.json();
+            renderRows(students);
+            studentsTable.style.display = 'table';
+        } catch (error) {
+            alert(error.message);
+        }
+    });
+
+    // Chatbot toggle functionality
+    const toggleBtn = document.getElementById('toggle-btn');
+    const chatbotContainer = document.getElementById('chatbot-container');
+
+    toggleBtn.addEventListener('click', () => {
+        const isMinimized = chatbotContainer.classList.contains('minimized');
+        if (isMinimized) {
+            chatbotContainer.classList.remove('minimized');
+            toggleBtn.textContent = '-';
+        } else {
+            chatbotContainer.classList.add('minimized');
+            toggleBtn.textContent = '+';
+        }
+    });
+
+    // Chatbot functionality
+    const chatMessages = document.getElementById('chat-messages');
+    const chatInput = document.getElementById('chat-input');
+    const sendBtn = document.getElementById('send-btn');
+
+    function addMessage(text, isUser) {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `chat-message ${isUser ? 'user-message' : 'bot-message'}`;
+        const textDiv = document.createElement('div');
+        textDiv.className = 'msg-text';
+        textDiv.textContent = text;
+        msgDiv.appendChild(textDiv);
+        chatMessages.appendChild(msgDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    async function sendMessage() {
+        const message = chatInput.value.trim();
+        if (!message) return;
+
+        addMessage(message, true);
+        chatInput.value = '';
+
+        // Show loading indicator
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'chat-message bot-message';
+        const loading = document.createElement('div');
+        loading.className = 'loading';
+        loading.textContent = 'Typing...';
+        loadingDiv.appendChild(loading);
+        chatMessages.appendChild(loadingDiv);
+
+        try {
+            const response = await fetch('/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: message })
+            });
+
+            loadingDiv.remove();
+
+            if (!response.ok) {
+                throw new Error('Failed to get response');
+            }
+
+            const data = await response.json();
+            addMessage(data.response, false);
+        } catch (error) {
+            loadingDiv.remove();
+            addMessage(`Error: ${error.message}`, false);
+        }
+    }
+
+    sendBtn.addEventListener('click', sendMessage);
+    chatInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendMessage();
+    });
+</script>
+
+</body>
+</html>
